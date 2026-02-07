@@ -1,0 +1,8 @@
+# ninja log v6
+2	68	1770486798525233089	DuckPlague_autogen/timestamp	bbd871e8e8d7914d
+2	68	1770486798525233089	DuckPlague_autogen/mocs_compilation.cpp	bbd871e8e8d7914d
+2	68	1770486798525233089	/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/DuckPlague_autogen/timestamp	bbd871e8e8d7914d
+2	68	1770486798525233089	/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/DuckPlague_autogen/mocs_compilation.cpp	bbd871e8e8d7914d
+70	141	1770486798536447175	CMakeFiles/DuckPlague.dir/DuckPlague_autogen/mocs_compilation.cpp.o	3d237d3c5d5f92bb
+70	1004	1770486798536643875	CMakeFiles/DuckPlague.dir/controller.cpp.o	cce72be23aa340ba
+1008	1199	1770486799474118101	DuckPlague	92edfa7ec1f4d055

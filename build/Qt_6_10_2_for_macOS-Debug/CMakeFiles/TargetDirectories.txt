@@ -1,0 +1,5 @@
+/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/CMakeFiles/DuckPlague.dir
+/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/CMakeFiles/edit_cache.dir
+/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/CMakeFiles/rebuild_cache.dir
+/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/CMakeFiles/DuckPlague_autogen_timestamp_deps.dir
+/Users/kyran/Documents/Documents - Kyran’s MacBook Air/College/CS433/Duck-Plague/build/Qt_6_10_2_for_macOS-Debug/CMakeFiles/DuckPlague_autogen.dir
