@@ -1,8 +1,15 @@
+#include <QCoreApplication>
 #include <QApplication>
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QStackedWidget>
+#include <QString>
+#include <filesystem>
+#include <cstdlib>
+#include <fstream>
+#include "mode_messages.h"
 
 /*
 Duck Plague — controller.cpp
@@ -48,22 +55,189 @@ HOW TO EXTEND
       3) Update dispatcher that renders based on UiKind.
 */
 
+// Forward declarations for mode entry points (implemented in other .cpp files).
+UiRequest run_trojan(const Context& ctx);
+
+void getContext(Context& ctx) {
+    namespace fs = std::filesystem;
+
+    // ---- Constants local to the controller (easy to change later) ----
+    constexpr size_t DEFAULT_SIZE_LIMIT_MB = 256;
+    const std::string DEMO_SUFFIX = "-DEMO";
+    const std::string LOG_FILENAME = "duck_plague.log";
+
+    // ---- Downloads path ----
+    // Prefer the user's home directory env var, then append "Downloads".
+    if (ctx.downloadsPath.empty()) {
+        #if defined(_WIN32)
+                // Windows: USERPROFILE is usually like C:\Users\<name>
+                const char* home = std::getenv("USERPROFILE");
+                // Fallbacks (less common)
+                if (!home) home = std::getenv("HOMEPATH");
+        #else
+                // macOS/Linux: HOME is usually like /Users/<name> or /home/<name>
+                const char* home = std::getenv("HOME");
+        #endif
+
+        if (home) {
+            fs::path downloads = fs::path(home) / "Downloads";
+            ctx.downloadsPath = downloads.string();
+        }
+    }
+
+    // ---- Size limit ----
+    if (ctx.sizeLimitMB == 0) {
+        ctx.sizeLimitMB = DEFAULT_SIZE_LIMIT_MB;
+    }
+
+    // ---- Demo suffix ----
+    if (ctx.demoSuffix.empty()) {
+        ctx.demoSuffix = DEMO_SUFFIX;
+    }
+
+    // ---- Log path ----
+    // Store logs next to the executable so they're easy to find.
+    if (ctx.logPath.empty()) {
+        fs::path exeDir = QCoreApplication::applicationDirPath().toStdString();
+        fs::path logPath = exeDir / LOG_FILENAME;
+        ctx.logPath = logPath.string();
+
+        // Ensure the log file exists
+        std::ofstream out(ctx.logPath, std::ios::app);
+    }
+
+}
+
+struct HomeWidgets {
+    QWidget* page = nullptr;
+    QLabel* label = nullptr;
+    QPushButton* trojanBtn = nullptr;
+    QPushButton* encryptBtn = nullptr;
+    QPushButton* educateBtn = nullptr;
+    QPushButton* restoreBtn = nullptr;
+    QPushButton* errorBtn = nullptr;
+};
+
+struct ModeWidgets {
+    QWidget* page = nullptr;
+    QLabel* titleLabel = nullptr;
+    QLabel* bodyLabel = nullptr;
+    QPushButton* backBtn = nullptr;
+};
+
+// Builds the Home page (label + mode buttons) and adds it to the stack.
+HomeWidgets buildHomePage(QStackedWidget* stack) {
+    HomeWidgets hw;
+
+    hw.page = new QWidget();
+    auto* homeLayout = new QVBoxLayout(hw.page);
+
+    hw.label = new QLabel("Controller: Home Screen");
+
+    hw.trojanBtn  = new QPushButton("Enter Trojan Mode");
+    hw.encryptBtn = new QPushButton("Enter Encrypt Mode");
+    hw.educateBtn = new QPushButton("Enter Education Mode");
+    hw.restoreBtn = new QPushButton("Enter Restore Mode");
+    hw.errorBtn   = new QPushButton("Enter Error Mode");
+
+    homeLayout->addWidget(hw.label);
+    homeLayout->addWidget(hw.trojanBtn);
+    homeLayout->addWidget(hw.encryptBtn);
+    homeLayout->addWidget(hw.educateBtn);
+    homeLayout->addWidget(hw.restoreBtn);
+    homeLayout->addWidget(hw.errorBtn);
+
+    stack->addWidget(hw.page); // index 0 (first page added)
+
+    return hw;
+}
+
+// Builds the Mode page (title/body + Back button) and adds it to the stack.
+ModeWidgets buildModePage(QStackedWidget* stack) {
+    ModeWidgets mw;
+
+    mw.page = new QWidget();
+    auto* layout = new QVBoxLayout(mw.page);
+
+    mw.titleLabel = new QLabel("Mode Screen");
+    mw.titleLabel->setWordWrap(true);
+
+    mw.bodyLabel = new QLabel("(no content yet)");
+    mw.bodyLabel->setWordWrap(true);
+
+    mw.backBtn = new QPushButton("Back to Controller");
+
+    layout->addWidget(mw.titleLabel);
+    layout->addWidget(mw.bodyLabel);
+    layout->addWidget(mw.backBtn);
+
+    stack->addWidget(mw.page); // index 1 (second page added)
+
+    return mw;
+}
+
+UiRequest runMode(Mode mode, const Context& ctx) {
+    switch (mode) {
+        case Mode::Trojan:
+            return run_trojan(ctx);
+        case Mode::Encrypt:
+            return UiRequest::MakeMessage("Encrypt Mode (Stub)", "Encrypt module not implemented yet.");
+        case Mode::Educate:
+            return UiRequest::MakeMessage("Education Mode (Stub)", "Educate module not implemented yet.");
+        case Mode::Restore:
+            return UiRequest::MakeMessage("Restore Mode (Stub)", "Restore module not implemented yet.");
+        case Mode::Error:
+            return UiRequest::MakeMessage("Error Mode (Stub)", "Error module not implemented yet.");
+        case Mode::Controller:
+            return UiRequest::MakeMessage("Controller", "Already on the controller home screen.");
+        case Mode::Exit:
+            return UiRequest::MakeMessage("Exit", "Exit requested.");
+        default:
+            return UiRequest::MakeMessage("Unknown", "Unknown mode.");
+    }
+}
+
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
     QWidget window;                       // A blank window
     window.setWindowTitle("Duck Plague"); // Window title bar text
 
-    auto *layout = new QVBoxLayout(&window); // Vertical layout inside the window
+    // We'll use a QStackedWidget so we can switch between "pages" (Home, Mode screens, etc.).
+    auto *outerLayout = new QVBoxLayout(&window);
+    auto *stack = new QStackedWidget();
+    outerLayout->addWidget(stack);
 
-    auto *label = new QLabel("Controller: Home Screen");
-    auto *button = new QPushButton("Enter Trojan Mode");
+    // Home page widget (label + mode buttons)
+    HomeWidgets home = buildHomePage(stack);
+    ModeWidgets modePage = buildModePage(stack);
 
-    layout->addWidget(label);
-    layout->addWidget(button);
+    Context ctx{};
+    getContext(ctx);
 
-    QObject::connect(button, &QPushButton::clicked, [&]() {
-        label->setText("Entered: Trojan Mode");
+    auto renderMessage = [&](const UiRequest& req) {
+        // For now we only support Message requests.
+        modePage.titleLabel->setText(QString::fromStdString(req.message.title));
+        modePage.bodyLabel->setText(QString::fromStdString(req.message.body));
+    };
+
+    auto connectModeButton = [&](QPushButton* btn, Mode m) {
+        // IMPORTANT: capture `m` by value so each button keeps its own mode.
+        QObject::connect(btn, &QPushButton::clicked, [&, m]() {
+            renderMessage(runMode(m, ctx));
+            stack->setCurrentWidget(modePage.page); // switch to Mode page
+        });
+    };
+
+    connectModeButton(home.trojanBtn,  Mode::Trojan);
+    connectModeButton(home.encryptBtn, Mode::Encrypt);
+    connectModeButton(home.educateBtn, Mode::Educate);
+    connectModeButton(home.restoreBtn, Mode::Restore);
+    connectModeButton(home.errorBtn,   Mode::Error);
+
+    QObject::connect(modePage.backBtn, &QPushButton::clicked, [&]() {
+        stack->setCurrentWidget(home.page); // back to Home page
     });
 
     window.show();

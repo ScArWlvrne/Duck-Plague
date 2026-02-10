@@ -58,3 +58,10 @@ struct UserInput {
     InputKind kind;
     int choiceIndex = -1; // used when ChoiceSelected
 };
+
+struct Context {
+    std::string downloadsPath;
+    size_t sizeLimitMB;
+    std::string demoSuffix;
+    std::string logPath;
+};
