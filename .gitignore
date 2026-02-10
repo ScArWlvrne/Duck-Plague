@@ -72,3 +72,7 @@ ui_*.h
 
 # ===== VS Code (optional but recommended) =====
 .vscode/
+
+# ===== Documents =====
+documents/
+compile_commands.json
