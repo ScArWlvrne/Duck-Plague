@@ -6,8 +6,10 @@
 #include <QVBoxLayout>
 #include <QStackedWidget>
 #include <QString>
+#include <QRandomGenerator>
 #include <filesystem>
 #include <cstdlib>
+#include <cstdint>
 #include <fstream>
 #include "mode_messages.h"
 
@@ -56,7 +58,47 @@ HOW TO EXTEND
 */
 
 // Forward declarations for mode entry points (implemented in other .cpp files).
-UiRequest run_trojan(const Context& ctx);
+UiRequest run_trojan(const Context& ctx, AppState& state);
+
+static bool tryParseEncryptionKeyLine(const std::string& line, uint64_t& key) {
+    const std::string prefix = "ENCRYPTION_KEY=";
+    if (line.rfind(prefix, 0) != 0) return false;
+
+    std::string value = line.substr(prefix.size());
+    try {
+        size_t idx = 0;
+        int base = 10;
+        if (value.size() > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X')) {
+            base = 16;
+        }
+        unsigned long long v = std::stoull(value, &idx, base);
+        if (idx == 0) return false;
+        key = static_cast<uint64_t>(v);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+void loadOrGenerateEncryptionKey(const std::string& logPath, AppState& state) {
+    std::ifstream in(logPath);
+    if (in) {
+        std::string line;
+        while (std::getline(in, line)) {
+            uint64_t key;
+            if (tryParseEncryptionKeyLine(line, key)) {
+                state.encryptionKey = key;
+                return;
+            }
+        }
+    }
+
+    state.encryptionKey = QRandomGenerator::global()->generate64();
+    std::ofstream out(logPath, std::ios::app);
+    if (out) {
+        out << "ENCRYPTION_KEY=0x" << std::hex << state.encryptionKey << std::dec << std::endl;
+    }
+}
 
 void getContext(Context& ctx) {
     namespace fs = std::filesystem;
@@ -105,7 +147,6 @@ void getContext(Context& ctx) {
         // Ensure the log file exists
         std::ofstream out(ctx.logPath, std::ios::app);
     }
-
 }
 
 struct HomeWidgets {
@@ -176,10 +217,10 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
     return mw;
 }
 
-UiRequest runMode(Mode mode, const Context& ctx) {
+UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
     switch (mode) {
         case Mode::Trojan:
-            return run_trojan(ctx);
+            return run_trojan(ctx, state);
         case Mode::Encrypt:
             return UiRequest::MakeMessage("Encrypt Mode (Stub)", "Encrypt module not implemented yet.");
         case Mode::Educate:
@@ -216,6 +257,9 @@ int main(int argc, char *argv[]) {
     Context ctx{};
     getContext(ctx);
 
+    AppState state{};
+    loadOrGenerateEncryptionKey(ctx.logPath, state);
+
     auto renderMessage = [&](const UiRequest& req) {
         // For now we only support Message requests.
         modePage.titleLabel->setText(QString::fromStdString(req.message.title));
@@ -225,7 +269,7 @@ int main(int argc, char *argv[]) {
     auto connectModeButton = [&](QPushButton* btn, Mode m) {
         // IMPORTANT: capture `m` by value so each button keeps its own mode.
         QObject::connect(btn, &QPushButton::clicked, [&, m]() {
-            renderMessage(runMode(m, ctx));
+            renderMessage(runMode(m, ctx, state));
             stack->setCurrentWidget(modePage.page); // switch to Mode page
         });
     };

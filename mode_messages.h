@@ -2,6 +2,9 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 enum class Mode { Controller, Trojan, Encrypt, Educate, Restore, Error, Exit };
 
@@ -64,4 +67,10 @@ struct Context {
     size_t sizeLimitMB;
     std::string demoSuffix;
     std::string logPath;
+};
+
+struct AppState {
+    std::vector<fs::path> targetFiles;
+    std::vector<fs::path> copyFiles;
+    uint64_t encryptionKey;
 };
