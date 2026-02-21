@@ -69,8 +69,19 @@ struct Context {
     std::string logPath;
 };
 
+enum class EncryptPhase {
+    Warning,
+    Scanning,
+    Copying,
+    Encrypting,
+    Done
+};
+
 struct AppState {
     std::vector<fs::path> targetFiles;
     std::vector<fs::path> copyFiles;
     uint64_t encryptionKey;
+
+    EncryptPhase encryptPhase = EncryptPhase::Warning;
+    bool encryptInitialized = false;
 };
