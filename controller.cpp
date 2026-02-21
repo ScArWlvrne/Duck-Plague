@@ -59,6 +59,8 @@ HOW TO EXTEND
 
 // Forward declarations for mode entry points (implemented in other .cpp files).
 UiRequest run_trojan(const Context& ctx, AppState& state);
+UiRequest encrypt_start(const Context& ctx, AppState& state);
+UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& input);
 
 static bool tryParseEncryptionKeyLine(const std::string& line, uint64_t& key) {
     const std::string prefix = "ENCRYPTION_KEY=";
@@ -163,6 +165,7 @@ struct ModeWidgets {
     QWidget* page = nullptr;
     QLabel* titleLabel = nullptr;
     QLabel* bodyLabel = nullptr;
+    QPushButton* primaryBtn = nullptr; // Next / Proceed (set per UiRequest)
     QPushButton* backBtn = nullptr;
 };
 
@@ -206,10 +209,12 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
     mw.bodyLabel = new QLabel("(no content yet)");
     mw.bodyLabel->setWordWrap(true);
 
+    mw.primaryBtn = new QPushButton("Next");
     mw.backBtn = new QPushButton("Back to Controller");
 
     layout->addWidget(mw.titleLabel);
     layout->addWidget(mw.bodyLabel);
+    layout->addWidget(mw.primaryBtn);
     layout->addWidget(mw.backBtn);
 
     stack->addWidget(mw.page); // index 1 (second page added)
@@ -222,7 +227,8 @@ UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
         case Mode::Trojan:
             return run_trojan(ctx, state);
         case Mode::Encrypt:
-            return UiRequest::MakeMessage("Encrypt Mode (Stub)", "Encrypt module not implemented yet.");
+            state.encryptInitialized = true;
+            return encrypt_start(ctx, state);
         case Mode::Educate:
             return UiRequest::MakeMessage("Education Mode (Stub)", "Educate module not implemented yet.");
         case Mode::Restore:
@@ -245,6 +251,10 @@ int main(int argc, char *argv[]) {
     QWidget window;                       // A blank window
     window.setWindowTitle("Duck Plague"); // Window title bar text
 
+    // Set a reasonable default window size
+    window.resize(800, 600);
+    window.setMinimumSize(600, 400);
+
     // We'll use a QStackedWidget so we can switch between "pages" (Home, Mode screens, etc.).
     auto *outerLayout = new QVBoxLayout(&window);
     auto *stack = new QStackedWidget();
@@ -260,15 +270,27 @@ int main(int argc, char *argv[]) {
     AppState state{};
     loadOrGenerateEncryptionKey(ctx.logPath, state);
 
+    Mode activeMode = Mode::Controller;
+
     auto renderMessage = [&](const UiRequest& req) {
         // For now we only support Message requests.
         modePage.titleLabel->setText(QString::fromStdString(req.message.title));
         modePage.bodyLabel->setText(QString::fromStdString(req.message.body));
+
+        const std::string btnText = req.message.primaryButtonText;
+        if (btnText.empty()) {
+            modePage.primaryBtn->hide();
+        } else {
+            modePage.primaryBtn->setText(QString::fromStdString(btnText));
+            modePage.primaryBtn->show();
+            modePage.primaryBtn->setEnabled(true);
+        }
     };
 
     auto connectModeButton = [&](QPushButton* btn, Mode m) {
         // IMPORTANT: capture `m` by value so each button keeps its own mode.
         QObject::connect(btn, &QPushButton::clicked, [&, m]() {
+            activeMode = m;
             renderMessage(runMode(m, ctx, state));
             stack->setCurrentWidget(modePage.page); // switch to Mode page
         });
@@ -280,7 +302,17 @@ int main(int argc, char *argv[]) {
     connectModeButton(home.restoreBtn, Mode::Restore);
     connectModeButton(home.errorBtn,   Mode::Error);
 
+    QObject::connect(modePage.primaryBtn, &QPushButton::clicked, [&]() {
+        if (activeMode == Mode::Encrypt) {
+            UserInput input{};
+            input.kind = InputKind::PrimaryButton;
+            renderMessage(encrypt_step(ctx, state, input));
+            stack->setCurrentWidget(modePage.page);
+        }
+    });
+
     QObject::connect(modePage.backBtn, &QPushButton::clicked, [&]() {
+        activeMode = Mode::Controller;
         stack->setCurrentWidget(home.page); // back to Home page
     });
 

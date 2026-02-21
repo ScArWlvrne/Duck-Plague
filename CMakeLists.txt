@@ -12,6 +12,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 add_executable(DuckPlague
     controller.cpp
     trojan.cpp
+    encrypt.cpp
 )
 
 target_link_libraries(DuckPlague PRIVATE Qt6::Widgets)

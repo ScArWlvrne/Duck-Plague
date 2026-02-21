@@ -66,7 +66,7 @@ std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& st
 
     log << "Selected " << targets.size() << " files for processing, total size: " << (currentTotalSize / (1024 * 1024)) << " MB." << std::endl;
     log << "Storing target file paths in AppState." << std::endl;
-    auto it = targets.begin();
+    it = targets.begin();
     while (it != targets.end()) {
         state.targetFiles.push_back(it->path());
         ++it;
@@ -80,23 +80,31 @@ std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& st
     return targets;
 }
 
-void copyFiles(const std::vector<fs::directory_entry>& files, const Context& ctx, AppState& state) {
+void copyFiles(const Context& ctx, AppState& state) {
     std::ofstream log(ctx.logPath, std::ios::app);
     log << "------------------------------" << std::endl;
     log << "Copying files to: " << ctx.downloadsPath << " with suffix: " << ctx.demoSuffix << std::endl;
     
-    for (const auto& file : files) {
+    for (const auto& file : state.targetFiles) {
         std::error_code copy_ec;
-        fs::path destination = fs::path(ctx.downloadsPath) / (file.path().filename().string() + ctx.demoSuffix);
-        fs::copy_file(file.path(), destination, fs::copy_options::overwrite_existing, copy_ec);
+        fs::path destination = fs::path(ctx.downloadsPath) / (file.filename().stem().string() + ctx.demoSuffix + file.filename().extension().string());
+        fs::copy_file(file, destination, fs::copy_options::overwrite_existing, copy_ec);
         
         if (copy_ec) {
-            std::cerr << "Failed to copy " << file.path() << " to " << destination << ": " << copy_ec.message() << std::endl;
+            std::cerr << "Failed to copy " << file << " to " << destination << ": " << copy_ec.message() << std::endl;
         }
 
         state.copyFiles.push_back(destination);
     }
     log << "Copied " << state.copyFiles.size() << " files." << std::endl;
+    log << "------------------------------" << std::endl;
+    log << "------------------------------" << std::endl;
+    int n = 0;
+    for (const auto& file : state.copyFiles) {
+        log << "COPY_FILE=" << file << std::endl;
+        ++n;
+    }
+    log << "COPY_COUNT=" << n << std::endl;
     log << "------------------------------" << std::endl;
 }
 
@@ -135,6 +143,85 @@ void xorFiles(const Context& ctx, AppState& state) { // Symmetric XOR encryption
 
         file.close();
         log << "Finished encrypting: " << filePath << std::endl;
-        log << "------------------------------" << std::endl;
     }
+
+    log << "Encryption complete for " << state.copyFiles.size() << " files." << std::endl;
+    log << "------------------------------" << std::endl;
+}
+
+UiRequest encrypt_start(const Context& ctx, AppState& state) {
+    std::ofstream log(ctx.logPath, std::ios::app);
+    log << "------------------------------" << std::endl;
+    log << "Starting Encrypt Mode." << std::endl;
+    state.encryptPhase = EncryptPhase::Warning;
+    log << "ENCRYPT_PHASE=WARNING" << std::endl;
+    log << "------------------------------" << std::endl;
+
+    return UiRequest::MakeMessage(
+        "Encrypt Mode",
+        "This demo will simulate encrypting files in your Downloads folder by copying them, appending a suffix, and applying a simple XOR cipher to the copies. The original files will be left unchanged. This is for demonstration purposes only and is NOT secure encryption. \n\n"
+        "Press Next to begin scanning for target files.",
+        "Next"
+    );
+}
+
+UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& input) {
+    std::ofstream log(ctx.logPath, std::ios::app);
+    log << "------------------------------" << std::endl;
+    log << "Encrypt Mode: Received user input. Current phase: " << static_cast<int>(state.encryptPhase) << std::endl;
+
+    if (input.kind != InputKind::PrimaryButton) {
+        log << "Unexpected input kind. Expected PrimaryButton." << std::endl;
+        log << "------------------------------" << std::endl;
+        return UiRequest::MakeMessage("Encrypt Mode", "Expected primary button input.");
+    }
+    
+    switch (state.encryptPhase) {
+        case EncryptPhase::Warning:
+            log << "Transitioning to SCANNING phase." << std::endl;
+            log << "ENCRYPT_PHASE=SCANNING" << std::endl;
+            log << "--------------------------------" << std::endl;
+
+            state.encryptPhase = EncryptPhase::Scanning;
+            getTargetFiles(ctx, state);
+            return UiRequest::MakeMessage(
+                "Scanning Complete", 
+                "Found " + std::to_string(state.targetFiles.size()) + " files to process. Press Next to create demo copies.", 
+                "Next");
+
+        case EncryptPhase::Scanning:
+            log << "Transitioning to COPYING phase." << std::endl;
+            log << "ENCRYPT_PHASE=COPYING" << std::endl;
+            log << "--------------------------------" << std::endl;
+
+            state.encryptPhase = EncryptPhase::Copying;
+            copyFiles(ctx, state);
+            return UiRequest::MakeMessage(
+                "Copying Complete", 
+                "Created " + std::to_string(state.copyFiles.size()) + " demo copies. Press Next to encrypt the copies.", 
+                "Next");
+
+        case EncryptPhase::Copying:
+            log << "Transitioning to ENCRYPTING phase." << std::endl;
+            log << "ENCRYPT_PHASE=ENCRYPTING" << std::endl;
+            log << "--------------------------------" << std::endl;
+
+            state.encryptPhase = EncryptPhase::Encrypting;
+            xorFiles(ctx, state);
+            return UiRequest::MakeMessage(
+                "Encryption Complete", 
+                "Demo files have been encrypted. Original files are unchanged. Press Next to finish.", 
+                "Next");
+        case EncryptPhase::Encrypting:
+            log << "Transitioning to DONE phase." << std::endl;
+            log << "ENCRYPT_PHASE=DONE" << std::endl;
+            log << "--------------------------------" << std::endl;
+
+            state.encryptPhase = EncryptPhase::Done;
+            return UiRequest::MakeNavigate(Mode::Educate, "Encryption demo complete. Navigating to Educate mode.");
+        default:
+            log << "Unexpected encryption phase." << std::endl;
+            log << "------------------------------" << std::endl;
+            return UiRequest::MakeMessage("Encrypt Mode", "Unexpected state.");
+        }
 }
