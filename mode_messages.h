@@ -84,4 +84,6 @@ struct AppState {
 
     EncryptPhase encryptPhase = EncryptPhase::Warning;
     bool encryptInitialized = false;
+
+    bool restoreInitialized = false;
 };
