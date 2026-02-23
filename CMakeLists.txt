@@ -13,6 +13,8 @@ add_executable(DuckPlague
     controller.cpp
     trojan.cpp
     encrypt.cpp
+    educate.cpp
+    restore.cpp
 )
 
 target_link_libraries(DuckPlague PRIVATE Qt6::Widgets)

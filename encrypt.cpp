@@ -11,6 +11,10 @@
 namespace fs = std::filesystem;
 
 std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& state) {
+    // ADDED: Clear any state from a previous run so counts don't accumulate.
+    state.targetFiles.clear();
+    state.copyFiles.clear();
+
     std::vector<fs::directory_entry> targets;
     std::error_code ec;
     std::ofstream log(ctx.logPath, std::ios::app);
@@ -49,8 +53,10 @@ std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& st
         uintmax_t fileSize = it->file_size(size_ec);
         
         if (size_ec) {
+            fs::path failedPath = it->path();
             it = targets.erase(it);
-            log << "Failed to get size for " << it->path() << ": " << size_ec.message() << ". Skipping file." << std::endl;
+
+            log << "Failed to get size for " << failedPath << ": " << size_ec.message() << ". Skipping file." << std::endl;
             continue;
         }
         
