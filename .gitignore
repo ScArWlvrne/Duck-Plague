@@ -55,6 +55,7 @@ build/
 build-*/
 cmake-build-*/
 .qtcreator/
+.cache/
 
 # ===== CMake generated files =====
 CMakeCache.txt

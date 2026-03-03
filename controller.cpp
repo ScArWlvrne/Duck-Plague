@@ -4,13 +4,18 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QGridLayout>
 #include <QStackedWidget>
+#include <QTimer>
+#include <QFrame>
 #include <QString>
 #include <QRandomGenerator>
 #include <filesystem>
 #include <cstdlib>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include "mode_messages.h"
 
 /*
@@ -31,10 +36,10 @@ ARCHITECTURAL RULES
 
 UI MODEL (recommended)
   - Use a QStackedWidget with pages:
-      (1) Home page: mode buttons
-      (2) Message page: title/body + primary button (Next/Back)
-      (3) Quiz page: question + choice buttons
-      (4) Progress page: status text + progress bar (optional later)
+      (0) Home page: mode buttons
+      (1) Message page: title/body + primary button (Next/Back)
+      (2) Quiz page: question + choice buttons 
+      (3) Calculator page: number pad + display (Trojan mode)
 
 CONTROLLER RESPONSIBILITIES
   - Create/own Context (downloads path, size limit, demo suffix, log path, etc.).
@@ -59,8 +64,14 @@ HOW TO EXTEND
 
 // Forward declarations for mode entry points (implemented in other .cpp files).
 UiRequest run_trojan(const Context& ctx, AppState& state);
+UiRequest trojan_handle_input(const Context& ctx, AppState& state, const UserInput& input);
 UiRequest encrypt_start(const Context& ctx, AppState& state);
 UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& input);
+UiRequest run_restore(const Context& ctx, AppState& state);
+UiRequest educate_start();
+
+
+UiRequest educate_handle_input(const UserInput& input);
 
 static bool tryParseEncryptionKeyLine(const std::string& line, uint64_t& key) {
     const std::string prefix = "ENCRYPTION_KEY=";
@@ -169,6 +180,21 @@ struct ModeWidgets {
     QPushButton* backBtn = nullptr;
 };
 
+// Dedicated quiz page — keeps quiz UI separate from message UI.
+struct QuizWidgets {
+    QWidget* page = nullptr;
+    QLabel* questionLabel = nullptr;
+    QPushButton* choiceButtons[4] = {nullptr, nullptr, nullptr, nullptr};
+    QPushButton* backBtn = nullptr;
+};
+
+struct CalcWidgets {
+    QWidget* page         = nullptr;
+    QLabel*  displayLabel = nullptr;
+};
+
+// Page builders
+
 // Builds the Home page (label + mode buttons) and adds it to the stack.
 HomeWidgets buildHomePage(QStackedWidget* stack) {
     HomeWidgets hw;
@@ -196,7 +222,7 @@ HomeWidgets buildHomePage(QStackedWidget* stack) {
     return hw;
 }
 
-// Builds the Mode page (title/body + Back button) and adds it to the stack.
+// Builds the Mode/Message page (title/body + Next/Back buttons).
 ModeWidgets buildModePage(QStackedWidget* stack) {
     ModeWidgets mw;
 
@@ -205,22 +231,124 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
 
     mw.titleLabel = new QLabel("Mode Screen");
     mw.titleLabel->setWordWrap(true);
+    mw.titleLabel->setStyleSheet("font-size: 20px; font-weight: bold; margin-bottom: 10px;");
 
     mw.bodyLabel = new QLabel("(no content yet)");
     mw.bodyLabel->setWordWrap(true);
+    mw.bodyLabel->setStyleSheet("font-size: 14px; margin-bottom: 20px;");
 
     mw.primaryBtn = new QPushButton("Next");
+    mw.primaryBtn->setMinimumHeight(40);
+
     mw.backBtn = new QPushButton("Back to Controller");
+    mw.backBtn->setFlat(true);
+    mw.backBtn->setStyleSheet("color: gray; font-size: 11px;");
 
     layout->addWidget(mw.titleLabel);
     layout->addWidget(mw.bodyLabel);
+    layout->addStretch();
     layout->addWidget(mw.primaryBtn);
-    layout->addWidget(mw.backBtn);
+
+    // Back button centered at the bottom
+    auto* exitLayout = new QHBoxLayout();
+    exitLayout->addStretch();
+    exitLayout->addWidget(mw.backBtn);
+    exitLayout->addStretch();
+    layout->addLayout(exitLayout);
 
     stack->addWidget(mw.page); // index 1 (second page added)
 
     return mw;
 }
+
+
+// Builds the Quiz page — teammate's design: question label + 4 choice buttons + Exit.
+QuizWidgets buildQuizPage(QStackedWidget* stack) {
+    QuizWidgets qw;
+
+    qw.page = new QWidget();
+    auto* layout = new QVBoxLayout(qw.page);
+    layout->setSpacing(20);
+    layout->setContentsMargins(40, 40, 40, 40);
+
+    qw.questionLabel = new QLabel("(Question will appear here)");
+    qw.questionLabel->setWordWrap(true);
+    qw.questionLabel->setAlignment(Qt::AlignCenter);
+    qw.questionLabel->setStyleSheet("font-size: 18px; font-weight: bold;");
+    layout->addWidget(qw.questionLabel);
+
+    for (int i = 0; i < 4; ++i) {
+        qw.choiceButtons[i] = new QPushButton();
+        qw.choiceButtons[i]->setMinimumHeight(50);
+        layout->addWidget(qw.choiceButtons[i]);
+    }
+
+    layout->addStretch();
+
+    qw.backBtn = new QPushButton("Exit Quiz");
+    qw.backBtn->setFlat(true);
+    qw.backBtn->setStyleSheet("color: gray; font-size: 11px;");
+
+    auto* exitLayout = new QHBoxLayout();
+    exitLayout->addStretch();
+    exitLayout->addWidget(qw.backBtn);
+    exitLayout->addStretch();
+    layout->addLayout(exitLayout);
+
+    stack->addWidget(qw.page); // index 2 (third page added)
+
+    return qw;
+}
+
+// builds a basic calculator -- TBD can change styles later, currently functional
+
+CalcWidgets buildCalcPage(QStackedWidget* stack,
+                           const std::function<void(const std::string&)>& onButton) {
+    CalcWidgets cw;
+    cw.page = new QWidget();
+    auto* outerLayout = new QVBoxLayout(cw.page);
+
+    // ---- Display ----
+    cw.displayLabel = new QLabel("0");
+    cw.displayLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    cw.displayLabel->setMinimumHeight(40);
+    cw.displayLabel->setFrameShape(QFrame::StyledPanel);
+    cw.displayLabel->setFrameShadow(QFrame::Sunken);
+    QFont df = cw.displayLabel->font();
+    df.setPointSize(14);
+    cw.displayLabel->setFont(df);
+    outerLayout->addWidget(cw.displayLabel);
+
+
+    auto* grid = new QGridLayout();
+    grid->setSpacing(4);
+
+    struct BtnSpec { int row; int col; int rspan; int cspan; const char* label; };
+    const BtnSpec specs[] = {
+        {0, 0, 1, 1, "C"}, {0, 3, 1, 1, "/"},
+        {1, 0, 1, 1, "7"}, {1, 1, 1, 1, "8"}, {1, 2, 1, 1, "9"}, {1, 3, 1, 1, "*"},
+        {2, 0, 1, 1, "4"}, {2, 1, 1, 1, "5"}, {2, 2, 1, 1, "6"}, {2, 3, 1, 1, "-"},
+        {3, 0, 1, 1, "1"}, {3, 1, 1, 1, "2"}, {3, 2, 1, 1, "3"}, {3, 3, 1, 1, "+"},
+        {4, 0, 1, 2, "0"}, {4, 2, 1, 1, "."}, {4, 3, 1, 1, "="},
+    };
+
+    for (const auto& s : specs) {
+        auto* btn = new QPushButton(QString::fromUtf8(s.label));
+        btn->setMinimumHeight(40);
+        std::string lbl(s.label);
+        QObject::connect(btn, &QPushButton::clicked, [lbl, onButton]() {
+            onButton(lbl);
+        });
+        grid->addWidget(btn, s.row, s.col, s.rspan, s.cspan);
+    }
+    for (int c = 0; c < 4; ++c) grid->setColumnStretch(c, 1);
+
+    outerLayout->addLayout(grid);
+    stack->addWidget(cw.page); // index 3 (fourth page added)
+    return cw;
+}
+
+// mode runs
 
 UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
     switch (mode) {
@@ -230,9 +358,11 @@ UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
             state.encryptInitialized = true;
             return encrypt_start(ctx, state);
         case Mode::Educate:
-            return UiRequest::MakeMessage("Education Mode (Stub)", "Educate module not implemented yet.");
+            //return UiRequest::MakeMessage("Education Mode (Stub)", "Educate module not implemented yet.");
+            return educate_start();
         case Mode::Restore:
-            return UiRequest::MakeMessage("Restore Mode (Stub)", "Restore module not implemented yet.");
+            //return UiRequest::MakeMessage("Restore Mode (Stub)", "Restore module not implemented yet.");
+            return run_restore(ctx, state);
         case Mode::Error:
             return UiRequest::MakeMessage("Error Mode (Stub)", "Error module not implemented yet.");
         case Mode::Controller:
@@ -260,9 +390,10 @@ int main(int argc, char *argv[]) {
     auto *stack = new QStackedWidget();
     outerLayout->addWidget(stack);
 
-    // Home page widget (label + mode buttons)
-    HomeWidgets home = buildHomePage(stack);
-    ModeWidgets modePage = buildModePage(stack);
+    // Build all pages
+    HomeWidgets home     = buildHomePage(stack); // index 0
+    ModeWidgets modePage = buildModePage(stack); // index 1
+    QuizWidgets quizPage = buildQuizPage(stack); // index 2  
 
     Context ctx{};
     getContext(ctx);
@@ -270,10 +401,86 @@ int main(int argc, char *argv[]) {
     AppState state{};
     loadOrGenerateEncryptionKey(ctx.logPath, state);
 
-    Mode activeMode = Mode::Controller;
+    // mode to track currentMode - used for education module and mode-specific button wiring
+    Mode activeMode = Mode::Controller; // starts at home/controller
 
-    auto renderMessage = [&](const UiRequest& req) {
-        // For now we only support Message requests.
+    // calculator page in trojan mode
+    // renderMessage is declared as std::function so buildCalcPage callbacks
+    // can reference it before the lambda is fully defined.
+    std::function<void(const UiRequest&)> renderMessage;
+
+    auto onCalcButton = [&](const std::string& label) {
+        if (activeMode != Mode::Trojan) return;
+        UserInput inp;
+        inp.kind       = InputKind::CalcButtonPress;
+        inp.buttonText = label;
+        renderMessage(trojan_handle_input(ctx, state, inp));
+    };
+
+    CalcWidgets calcPage = buildCalcPage(stack, onCalcButton); // index 3
+
+    // ---- 1-second timer — only active in Trojan mode ----
+    auto* calcTimer = new QTimer(&window);
+    calcTimer->setInterval(1000);
+    QObject::connect(calcTimer, &QTimer::timeout, [&]() {
+        if (activeMode != Mode::Trojan) return;
+        UserInput inp;
+        inp.kind = InputKind::Tick;
+        renderMessage(trojan_handle_input(ctx, state, inp));
+    });
+    calcTimer->start();
+
+    // renders quiz questions
+    auto renderQuiz = [&](const UiRequest& req) {
+        quizPage.questionLabel->setText(QString::fromStdString(req.quiz.question));
+
+        for (int i = 0; i < 4; ++i) {
+            if (i < static_cast<int>(req.quiz.choices.size())) {
+                quizPage.choiceButtons[i]->setText(
+                    QString::fromStdString(req.quiz.choices[i]));
+                quizPage.choiceButtons[i]->setVisible(true);
+            } else {
+                quizPage.choiceButtons[i]->setVisible(false);
+            }
+        }
+
+        stack->setCurrentWidget(quizPage.page);
+    };
+
+    // Handles Calculator, Navigate, Quiz, and Message UiKinds.
+    renderMessage = [&](const UiRequest& req) {
+        if (req.kind == UiKind::Calculator) {
+            // Update calculator display and ensure calc page is shown.
+            calcPage.displayLabel->setText(
+                QString::fromStdString(req.calculator.displayText));
+            stack->setCurrentWidget(calcPage.page);
+            return;
+        }
+
+        if (req.kind == UiKind::Navigate) {
+            // Transition to the requested mode.
+            activeMode = req.nav.nextMode;
+            if (activeMode == Mode::Controller) {
+                stack->setCurrentWidget(home.page);
+                return;
+            }
+            if (activeMode == Mode::Exit) {
+                // Cleanly shut down the Qt event loop - app.exec() returns.
+                QCoreApplication::quit();
+                return;
+            }
+            // Run the new mode and render its first request recursively.
+            renderMessage(runMode(activeMode, ctx, state));
+            return;
+        }
+
+        if (req.kind == UiKind::Quiz) {
+            // Show the dedicated quiz page (teammate's design).
+            renderQuiz(req);
+            return;
+        }
+
+        // Message: lesson page, feedback, encrypt status, etc.
         modePage.titleLabel->setText(QString::fromStdString(req.message.title));
         modePage.bodyLabel->setText(QString::fromStdString(req.message.body));
 
@@ -285,14 +492,38 @@ int main(int argc, char *argv[]) {
             modePage.primaryBtn->show();
             modePage.primaryBtn->setEnabled(true);
         }
+        stack->setCurrentWidget(modePage.page);
     };
+
+    // handles quiz button choices
+    auto handleChoiceClick = [&](int choiceIndex) {
+        UserInput input;
+        input.kind        = InputKind::ChoiceSelected;
+        input.choiceIndex = choiceIndex;
+        UiRequest req = educate_handle_input(input);
+        renderMessage(req);
+    };
+
+    // Wire the 4 quiz choice buttons
+    for (int i = 0; i < 4; ++i) {
+        QObject::connect(quizPage.choiceButtons[i], &QPushButton::clicked, [&, i]() {
+            handleChoiceClick(i);
+        });
+    }
 
     auto connectModeButton = [&](QPushButton* btn, Mode m) {
         // IMPORTANT: capture `m` by value so each button keeps its own mode.
         QObject::connect(btn, &QPushButton::clicked, [&, m]() {
             activeMode = m;
+            if (m == Mode::Trojan) {
+                // Initialize/reset calculator state, then show the calc page.
+                UiRequest req = run_trojan(ctx, state);
+                calcPage.displayLabel->setText(
+                    QString::fromStdString(req.calculator.displayText));
+                stack->setCurrentWidget(calcPage.page);
+                return;
+            }
             renderMessage(runMode(m, ctx, state));
-            stack->setCurrentWidget(modePage.page); // switch to Mode page
         });
     };
 
@@ -302,19 +533,33 @@ int main(int argc, char *argv[]) {
     connectModeButton(home.restoreBtn, Mode::Restore);
     connectModeButton(home.errorBtn,   Mode::Error);
 
+    //Primary "Next" button — handles Encrypt, Educate, and Restore step-by-step 
     QObject::connect(modePage.primaryBtn, &QPushButton::clicked, [&]() {
         if (activeMode == Mode::Encrypt) {
             UserInput input{};
             input.kind = InputKind::PrimaryButton;
             renderMessage(encrypt_step(ctx, state, input));
             stack->setCurrentWidget(modePage.page);
+        } else if (activeMode == Mode::Educate) {
+            UserInput input{};
+            input.kind = InputKind::PrimaryButton;
+            renderMessage(educate_handle_input(input));
+        } else if (activeMode == Mode::Restore) {
+            // restoreInitialized is already true at this point (set by restoreStart),
+            // so run_restore() will call restoreStep() → Navigate(Exit).
+            renderMessage(run_restore(ctx, state));
         }
     });
 
-    QObject::connect(modePage.backBtn, &QPushButton::clicked, [&]() {
+
+    // back / exit buttons
+    auto handleExit = [&]() {
         activeMode = Mode::Controller;
         stack->setCurrentWidget(home.page); // back to Home page
-    });
+    };
+
+    QObject::connect(modePage.backBtn, &QPushButton::clicked, handleExit);
+    QObject::connect(quizPage.backBtn, &QPushButton::clicked, handleExit);
 
     window.show();
     return app.exec();
