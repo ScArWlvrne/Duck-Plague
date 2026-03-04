@@ -4,10 +4,10 @@
 #include <filesystem>
 #include "mode_messages.h"
 
-void xorFiles(const Context& ctx, AppState& state); // XOR encryption means decryption is the same operation, so we can reuse the function for both steps
+std::string xorFiles(const Context& ctx, AppState& state); // XOR encryption means decryption is the same operation, so we can reuse the function for both steps
 
 UiRequest restoreStart(const Context& ctx, AppState& state) {
-    xorFiles(ctx, state); // XOR again to restore original files
+    (void)xorFiles(ctx, state); // XOR again to restore original files
     state.restoreInitialized = true;
     std::ofstream log(ctx.logPath, std::ios::app);
     log << "------------------------------" << std::endl;

@@ -68,6 +68,7 @@ UiRequest trojan_handle_input(const Context& ctx, AppState& state, const UserInp
 UiRequest encrypt_start(const Context& ctx, AppState& state);
 UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& input);
 UiRequest run_restore(const Context& ctx, AppState& state);
+UiRequest error_display(const Context& ctx);
 UiRequest educate_start();
 
 
@@ -364,7 +365,7 @@ UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
             //return UiRequest::MakeMessage("Restore Mode (Stub)", "Restore module not implemented yet.");
             return run_restore(ctx, state);
         case Mode::Error:
-            return UiRequest::MakeMessage("Error Mode (Stub)", "Error module not implemented yet.");
+            return error_display(ctx);
         case Mode::Controller:
             return UiRequest::MakeMessage("Controller", "Already on the controller home screen.");
         case Mode::Exit:
@@ -533,7 +534,7 @@ int main(int argc, char *argv[]) {
     connectModeButton(home.restoreBtn, Mode::Restore);
     connectModeButton(home.errorBtn,   Mode::Error);
 
-    //Primary "Next" button — handles Encrypt, Educate, and Restore step-by-step 
+    //Primary "Next" button — handles Encrypt, Educate, Restore, and Error (-> Restore) step-by-step 
     QObject::connect(modePage.primaryBtn, &QPushButton::clicked, [&]() {
         if (activeMode == Mode::Encrypt) {
             UserInput input{};
@@ -544,6 +545,10 @@ int main(int argc, char *argv[]) {
             UserInput input{};
             input.kind = InputKind::PrimaryButton;
             renderMessage(educate_handle_input(input));
+        } else if (activeMode == Mode::Error) {
+            // User pressed "Restore now" — transition to Restore to undo any demo changes.
+            activeMode = Mode::Restore;
+            renderMessage(run_restore(ctx, state));
         } else if (activeMode == Mode::Restore) {
             // restoreInitialized is already true at this point (set by restoreStart),
             // so run_restore() will call restoreStep() → Navigate(Exit).
