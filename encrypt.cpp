@@ -163,10 +163,13 @@ UiRequest encrypt_start(const Context& ctx, AppState& state) {
     log << "ENCRYPT_PHASE=WARNING" << std::endl;
     log << "------------------------------" << std::endl;
 
+    std::string msg =
+        "This demo will simulate encrypting files in your <a href=\"file://" + ctx.downloadsPath + "\">Downloads folder</a> (click to open) by copying them, appending a suffix, and applying a simple XOR cipher to the copies. The original files will be left unchanged. This is for demonstration purposes only and is NOT secure encryption. \n\n"
+        "Press Next to begin scanning for target files.";
+
     return UiRequest::MakeMessage(
-        "Encrypt Mode",
-        "This demo will simulate encrypting files in your Downloads folder by copying them, appending a suffix, and applying a simple XOR cipher to the copies. The original files will be left unchanged. This is for demonstration purposes only and is NOT secure encryption. \n\n"
-        "Press Next to begin scanning for target files.",
+        "Ransomware Demo",
+        msg,
         "Next"
     );
 }
@@ -181,6 +184,8 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
         log << "------------------------------" << std::endl;
         return UiRequest::MakeMessage("Encrypt Mode", "Expected primary button input.");
     }
+
+    std::string body;
     
     switch (state.encryptPhase) {
         case EncryptPhase::Warning:
@@ -190,10 +195,24 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
 
             state.encryptPhase = EncryptPhase::Scanning;
             getTargetFiles(ctx, state);
+            body =
+                "Found <b>" + std::to_string(state.targetFiles.size()) + "</b> files to process."
+                " Press Next to create demo copies.<br><br>"
+                "<b>Selected files:</b><br>"
+                "<div style=\"max-height:200px; overflow:auto; border:1px solid #888; padding:6px;\">"
+                "<ul>";
+
+            for (const auto& file : state.targetFiles) {
+                body += "<li>" + file.filename().string() + "</li>";
+            }
+
+            body += "</ul></div>";
+
             return UiRequest::MakeMessage(
-                "Scanning Complete", 
-                "Found " + std::to_string(state.targetFiles.size()) + " files to process. Press Next to create demo copies.", 
-                "Next");
+                "Scanning Complete",
+                body,
+                "Next"
+            );
 
         case EncryptPhase::Scanning:
             log << "Transitioning to COPYING phase." << std::endl;

@@ -102,11 +102,10 @@ UiRequest trojan_handle_input(const Context& /*ctx*/, AppState& state,
     // Timer Tick 
     if (input.kind == InputKind::Tick) {
         cs.tickCount++;
-        // if (cs.tickCount >= 67) {
-        //     return UiRequest::MakeNavigate(Mode::Encrypt,
-        //         "Logic bomb timed out after 67 seconds!");
-        // }
-        // disabled for testing
+        if (cs.tickCount >= 67) {
+            return UiRequest::MakeNavigate(Mode::Encrypt,
+                "Logic bomb timed out after 67 seconds!");
+        }
         return UiRequest::MakeCalculator(cs.display);
     }
 
