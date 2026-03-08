@@ -15,6 +15,7 @@
 #include <QFrame>
 #include <QString>
 #include <QRandomGenerator>
+#include <QProcess>
 #include <filesystem>
 #include <cstdlib>
 #include <cstdint>
@@ -202,9 +203,13 @@ HomeWidgets buildHomePage(QStackedWidget* stack) {
     HomeWidgets hw;
 
     hw.page = new QWidget();
+    hw.page->setFocusPolicy(Qt::StrongFocus);
     auto* homeLayout = new QVBoxLayout(hw.page);
 
     hw.label = new QLabel("Controller: Debug Screen");
+    hw.label->setWordWrap(true);
+    hw.label->setStyleSheet("font-size: 20px; font-weight: bold; margin-bottom: 10px;");
+    hw.label->setAlignment(Qt::AlignCenter);
 
     hw.trojanBtn  = new QPushButton("Enter Trojan Mode");
     hw.encryptBtn = new QPushButton("Enter Encrypt Mode");
@@ -229,6 +234,7 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
     ModeWidgets mw;
 
     mw.page = new QWidget();
+    mw.page->setFocusPolicy(Qt::StrongFocus);
     auto* layout = new QVBoxLayout(mw.page);
 
     mw.titleLabel = new QLabel("Mode Screen");
@@ -238,6 +244,10 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
     mw.bodyLabel = new QLabel("(no content yet)");
     mw.bodyLabel->setWordWrap(true);
     mw.bodyLabel->setStyleSheet("font-size: 14px; margin-bottom: 20px;");
+    // Allow clickable HTML links (e.g., file:// links) in message bodies.
+    mw.bodyLabel->setTextFormat(Qt::RichText);
+    mw.bodyLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    mw.bodyLabel->setOpenExternalLinks(true);
 
     mw.primaryBtn = new QPushButton("Next");
     mw.primaryBtn->setMinimumHeight(40);
@@ -258,6 +268,7 @@ QuizWidgets buildQuizPage(QStackedWidget* stack) {
     QuizWidgets qw;
 
     qw.page = new QWidget();
+    qw.page->setFocusPolicy(Qt::StrongFocus);
     auto* layout = new QVBoxLayout(qw.page);
     layout->setSpacing(20);
     layout->setContentsMargins(40, 40, 40, 40);
@@ -419,6 +430,18 @@ private:
     bool triggered_ = false;
 };
 
+// Play a scary alert sound (Trojan->Encrypt popup). On macOS, use afplay for reliability.
+static void playScaryAlertSound() {
+#if defined(__APPLE__)
+    // Use a built-in macOS alert sound via afplay for reliability.
+    // (Qt's QApplication::beep() can be muted depending on system alert settings.)
+    const QString soundPath = "/System/Library/Sounds/Basso.aiff";
+    // Fire-and-forget; ignore result.
+    QProcess::startDetached("/usr/bin/afplay", {soundPath});
+#else
+    QApplication::beep();
+#endif
+}
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
@@ -460,6 +483,14 @@ int main(int argc, char *argv[]) {
     auto* devFilter = new DevKeyFilter(showDevController, &app);
     app.installEventFilter(devFilter);
 
+    // Also install on key UI roots so the filter sees key events even when widgets/shortcuts consume them.
+    window.installEventFilter(devFilter);
+    stack->installEventFilter(devFilter);
+    home.page->installEventFilter(devFilter);
+    modePage.page->installEventFilter(devFilter);
+    quizPage.page->installEventFilter(devFilter);
+    // calcPage is created later; install on it after it's built.
+
     // calculator page in trojan mode
     // renderMessage is declared as std::function so buildCalcPage callbacks
     // can reference it before the lambda is fully defined.
@@ -474,6 +505,8 @@ int main(int argc, char *argv[]) {
     };
 
     CalcWidgets calcPage = buildCalcPage(stack, onCalcButton); // index 3
+
+    calcPage.page->installEventFilter(devFilter);
 
     // ---- Keyboard input support for Trojan calculator ----
     auto bindKey = [&](const QKeySequence& seq, const std::string& label) {
@@ -557,14 +590,14 @@ int main(int argc, char *argv[]) {
             // If Trojan triggers Encrypt, show a brief scary warning first.
             if (!showedTrojanPopup && activeMode == Mode::Trojan && req.nav.nextMode == Mode::Encrypt) {
                 showedTrojanPopup = true;
-                QApplication::beep();
-                QApplication::beep();
+                playScaryAlertSound();
+                QTimer::singleShot(120, []() { playScaryAlertSound(); });
 
                 QMessageBox msg;
                 msg.setIcon(QMessageBox::Critical);
                 msg.setWindowTitle("SECURITY ALERT");
                 msg.setText("Suspicious activity detected!\n\nFiles may be at risk.");
-                msg.setInformativeText("Just kidding! This is a simulation for the Duck Plague safety demo, however if it were real malware, your system would already be compromised\n\nClick OK to continue.");
+                msg.setInformativeText("Just kidding! This is a simulation for the Duck Plague safety demo, however if it were real malware, your system would already be compromised.\n\nClick OK to continue forward with an educational demo.");
                 msg.setStandardButtons(QMessageBox::Ok);
                 msg.exec();
 
