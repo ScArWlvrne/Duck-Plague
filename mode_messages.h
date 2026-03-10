@@ -109,9 +109,3 @@ struct AppState {
 
     TrojanCalcState calcState;
 };
-
-// ---- Error handling (implemented in error.cpp) ----
-// Report error: logs to Context::logPath and returns Navigate(Error) so controller can show message and offer Restore.
-UiRequest error_set_and_log(const std::string& source, const std::string& message, const Context& ctx);
-// Produce the Message to show in Error mode (Restore now button); called by controller when entering Mode::Error.
-UiRequest error_display(const Context& ctx);
