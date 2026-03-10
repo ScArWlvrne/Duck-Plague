@@ -202,7 +202,9 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
         log << "------------------------------" << std::endl;
         return UiRequest::MakeMessage("Encrypt Mode", "Expected primary button input.");
     }
-    
+
+    std::string scanErr, copyErr, xorErr;
+
     switch (state.encryptPhase) {
         case EncryptPhase::Warning:
             log << "Transitioning to SCANNING phase." << std::endl;
@@ -210,7 +212,7 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
             log << "--------------------------------" << std::endl;
 
             state.encryptPhase = EncryptPhase::Scanning;
-            std::string scanErr;
+            scanErr.clear();
             getTargetFiles(ctx, state, &scanErr);
             if (!scanErr.empty()) {
                 return error_set_and_log("encrypt", scanErr, ctx);
@@ -241,7 +243,7 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
             log << "--------------------------------" << std::endl;
 
             state.encryptPhase = EncryptPhase::Encrypting;
-            std::string xorErr = xorFiles(ctx, state);
+            xorErr = xorFiles(ctx, state);
             if (!xorErr.empty()) {
                 return error_set_and_log("encrypt", xorErr, ctx);
             }
