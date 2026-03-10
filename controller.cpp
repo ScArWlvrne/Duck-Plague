@@ -447,7 +447,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
     QWidget window;                       // A blank window
-    window.setWindowTitle("Duck Plague"); // Window title bar text
+    window.setWindowTitle("Calc ver 6.7 (calc is slang for calculator btw)"); // Window title bar text
     window.setFocusPolicy(Qt::StrongFocus);
 
     // Set a reasonable default window size
@@ -590,6 +590,7 @@ int main(int argc, char *argv[]) {
             // If Trojan triggers Encrypt, show a brief scary warning first.
             if (!showedTrojanPopup && activeMode == Mode::Trojan && req.nav.nextMode == Mode::Encrypt) {
                 showedTrojanPopup = true;
+                window.setWindowTitle("Duck Plague")
                 playScaryAlertSound();
                 QTimer::singleShot(120, []() { playScaryAlertSound(); });
 
