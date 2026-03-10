@@ -200,10 +200,13 @@ UiRequest encrypt_start(const Context& ctx, AppState& state) {
     log << "ENCRYPT_PHASE=WARNING" << std::endl;
     log << "------------------------------" << std::endl;
 
+    std::string msg =
+        "This demo will simulate encrypting files in your <a href=\"file://" + ctx.downloadsPath + "\">Downloads folder</a> (click to open) by copying them, appending a suffix, and applying a simple XOR cipher to the copies. The original files will be left unchanged. This is for demonstration purposes only and is NOT secure encryption. \n\n"
+        "Press Next to begin scanning for target files.";
+
     return UiRequest::MakeMessage(
-        "Encrypt Mode",
-        "This demo will simulate encrypting files in your Downloads folder by copying them, appending a suffix, and applying a simple XOR cipher to the copies. The original files will be left unchanged. This is for demonstration purposes only and is NOT secure encryption. \n\n"
-        "Press Next to begin scanning for target files.",
+        "Ransomware Demo",
+        msg,
         "Next"
     );
 }
