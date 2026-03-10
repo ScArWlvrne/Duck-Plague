@@ -8,14 +8,9 @@
 #include <QGridLayout>
 #include <QStackedWidget>
 #include <QTimer>
-#include <QShortcut>
-#include <QMessageBox>
-#include <QKeyEvent>
-#include <QSet>
 #include <QFrame>
 #include <QString>
 #include <QRandomGenerator>
-#include <QProcess>
 #include <filesystem>
 #include <cstdlib>
 #include <cstdint>
@@ -73,6 +68,7 @@ UiRequest trojan_handle_input(const Context& ctx, AppState& state, const UserInp
 UiRequest encrypt_start(const Context& ctx, AppState& state);
 UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& input);
 UiRequest run_restore(const Context& ctx, AppState& state);
+UiRequest error_display(const Context& ctx);
 UiRequest educate_start();
 
 
@@ -182,6 +178,7 @@ struct ModeWidgets {
     QLabel* titleLabel = nullptr;
     QLabel* bodyLabel = nullptr;
     QPushButton* primaryBtn = nullptr; // Next / Proceed (set per UiRequest)
+    QPushButton* backBtn = nullptr;
 };
 
 // Dedicated quiz page — keeps quiz UI separate from message UI.
@@ -189,6 +186,7 @@ struct QuizWidgets {
     QWidget* page = nullptr;
     QLabel* questionLabel = nullptr;
     QPushButton* choiceButtons[4] = {nullptr, nullptr, nullptr, nullptr};
+    QPushButton* backBtn = nullptr;
 };
 
 struct CalcWidgets {
@@ -203,13 +201,9 @@ HomeWidgets buildHomePage(QStackedWidget* stack) {
     HomeWidgets hw;
 
     hw.page = new QWidget();
-    hw.page->setFocusPolicy(Qt::StrongFocus);
     auto* homeLayout = new QVBoxLayout(hw.page);
 
-    hw.label = new QLabel("Controller: Debug Screen");
-    hw.label->setWordWrap(true);
-    hw.label->setStyleSheet("font-size: 20px; font-weight: bold; margin-bottom: 10px;");
-    hw.label->setAlignment(Qt::AlignCenter);
+    hw.label = new QLabel("Controller: Home Screen");
 
     hw.trojanBtn  = new QPushButton("Enter Trojan Mode");
     hw.encryptBtn = new QPushButton("Enter Encrypt Mode");
@@ -229,12 +223,11 @@ HomeWidgets buildHomePage(QStackedWidget* stack) {
     return hw;
 }
 
-// Builds the Mode/Message page (title/body + Next button).
+// Builds the Mode/Message page (title/body + Next/Back buttons).
 ModeWidgets buildModePage(QStackedWidget* stack) {
     ModeWidgets mw;
 
     mw.page = new QWidget();
-    mw.page->setFocusPolicy(Qt::StrongFocus);
     auto* layout = new QVBoxLayout(mw.page);
 
     mw.titleLabel = new QLabel("Mode Screen");
@@ -244,18 +237,25 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
     mw.bodyLabel = new QLabel("(no content yet)");
     mw.bodyLabel->setWordWrap(true);
     mw.bodyLabel->setStyleSheet("font-size: 14px; margin-bottom: 20px;");
-    // Allow clickable HTML links (e.g., file:// links) in message bodies.
-    mw.bodyLabel->setTextFormat(Qt::RichText);
-    mw.bodyLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    mw.bodyLabel->setOpenExternalLinks(true);
 
     mw.primaryBtn = new QPushButton("Next");
     mw.primaryBtn->setMinimumHeight(40);
+
+    mw.backBtn = new QPushButton("Back to Controller");
+    mw.backBtn->setFlat(true);
+    mw.backBtn->setStyleSheet("color: gray; font-size: 11px;");
 
     layout->addWidget(mw.titleLabel);
     layout->addWidget(mw.bodyLabel);
     layout->addStretch();
     layout->addWidget(mw.primaryBtn);
+
+    // Back button centered at the bottom
+    auto* exitLayout = new QHBoxLayout();
+    exitLayout->addStretch();
+    exitLayout->addWidget(mw.backBtn);
+    exitLayout->addStretch();
+    layout->addLayout(exitLayout);
 
     stack->addWidget(mw.page); // index 1 (second page added)
 
@@ -263,12 +263,11 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
 }
 
 
-// Builds the Quiz page — teammate's design: question label + 4 choice buttons.
+// Builds the Quiz page — teammate's design: question label + 4 choice buttons + Exit.
 QuizWidgets buildQuizPage(QStackedWidget* stack) {
     QuizWidgets qw;
 
     qw.page = new QWidget();
-    qw.page->setFocusPolicy(Qt::StrongFocus);
     auto* layout = new QVBoxLayout(qw.page);
     layout->setSpacing(20);
     layout->setContentsMargins(40, 40, 40, 40);
@@ -286,6 +285,16 @@ QuizWidgets buildQuizPage(QStackedWidget* stack) {
     }
 
     layout->addStretch();
+
+    qw.backBtn = new QPushButton("Exit Quiz");
+    qw.backBtn->setFlat(true);
+    qw.backBtn->setStyleSheet("color: gray; font-size: 11px;");
+
+    auto* exitLayout = new QHBoxLayout();
+    exitLayout->addStretch();
+    exitLayout->addWidget(qw.backBtn);
+    exitLayout->addStretch();
+    layout->addLayout(exitLayout);
 
     stack->addWidget(qw.page); // index 2 (third page added)
 
@@ -356,7 +365,7 @@ UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
             //return UiRequest::MakeMessage("Restore Mode (Stub)", "Restore module not implemented yet.");
             return run_restore(ctx, state);
         case Mode::Error:
-            return UiRequest::MakeMessage("Error Mode (Stub)", "Error module not implemented yet.");
+            return error_display(ctx);
         case Mode::Controller:
             return UiRequest::MakeMessage("Controller", "Already on the controller home screen.");
         case Mode::Exit:
@@ -366,89 +375,12 @@ UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
     }
 }
 
-// Global dev trigger: if the user HOLDS D+E+V at the same time (and no other non-modifier keys),
-// switch to the debug controller page.
-class DevKeyFilter : public QObject {
-public:
-    explicit DevKeyFilter(std::function<void()> onDevTriggered, QObject* parent = nullptr)
-        : QObject(parent), onDevTriggered_(std::move(onDevTriggered)) {}
-
-protected:
-    bool eventFilter(QObject* obj, QEvent* event) override {
-        (void)obj;
-
-        // Catch both normal keypresses and ShortcutOverride so we see keys even when shortcuts/widgets are involved.
-        const bool isPress = (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride);
-        const bool isRelease = (event->type() == QEvent::KeyRelease);
-        if (!isPress && !isRelease) return false;
-
-        auto* ke = static_cast<QKeyEvent*>(event);
-
-        // Ignore auto-repeat so holding a key doesn't spam.
-        if (ke->isAutoRepeat()) return false;
-
-        const int k = ke->key();
-
-        // Ignore pure modifier keys.
-        if (k == Qt::Key_Shift || k == Qt::Key_Control || k == Qt::Key_Alt || k == Qt::Key_Meta) {
-            return false;
-        }
-
-        // If the user holds Ctrl/Alt/Meta with other keys, do not trigger (and clear our state).
-        const auto mods = ke->modifiers();
-        if (mods & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
-            held_.clear();
-            triggered_ = false;
-            return false;
-        }
-
-        if (isPress) {
-            held_.insert(k);
-        } else if (isRelease) {
-            held_.remove(k);
-            // Allow triggering again after the combo is released.
-            if (!held_.contains(Qt::Key_D) && !held_.contains(Qt::Key_E) && !held_.contains(Qt::Key_V)) {
-                triggered_ = false;
-            }
-        }
-
-        // Trigger only when EXACTLY D, E, and V are held (no other keys).
-        const bool comboHeld = held_.contains(Qt::Key_D) && held_.contains(Qt::Key_E) && held_.contains(Qt::Key_V);
-        const bool onlyComboKeys = (held_.size() == 3);
-
-        if (!triggered_ && comboHeld && onlyComboKeys) {
-            triggered_ = true;
-            if (onDevTriggered_) onDevTriggered_();
-        }
-
-        return false; // do not consume
-    }
-
-private:
-    std::function<void()> onDevTriggered_;
-    QSet<int> held_;
-    bool triggered_ = false;
-};
-
-// Play a scary alert sound (Trojan->Encrypt popup). On macOS, use afplay for reliability.
-static void playScaryAlertSound() {
-#if defined(__APPLE__)
-    // Use a built-in macOS alert sound via afplay for reliability.
-    // (Qt's QApplication::beep() can be muted depending on system alert settings.)
-    const QString soundPath = "/System/Library/Sounds/Basso.aiff";
-    // Fire-and-forget; ignore result.
-    QProcess::startDetached("/usr/bin/afplay", {soundPath});
-#else
-    QApplication::beep();
-#endif
-}
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
     QWidget window;                       // A blank window
-    window.setWindowTitle("Calc ver 6.7 (calc is slang for calculator btw)"); // Window title bar text
-    window.setFocusPolicy(Qt::StrongFocus);
+    window.setWindowTitle("Duck Plague"); // Window title bar text
 
     // Set a reasonable default window size
     window.resize(800, 600);
@@ -472,24 +404,6 @@ int main(int argc, char *argv[]) {
 
     // mode to track currentMode - used for education module and mode-specific button wiring
     Mode activeMode = Mode::Controller; // starts at home/controller
-    bool showedTrojanPopup = false;
-
-    // "dev" hot-sequence: jump to the controller debug screen from anywhere.
-    auto showDevController = [&]() {
-        activeMode = Mode::Controller;
-        stack->setCurrentWidget(home.page);
-    };
-
-    auto* devFilter = new DevKeyFilter(showDevController, &app);
-    app.installEventFilter(devFilter);
-
-    // Also install on key UI roots so the filter sees key events even when widgets/shortcuts consume them.
-    window.installEventFilter(devFilter);
-    stack->installEventFilter(devFilter);
-    home.page->installEventFilter(devFilter);
-    modePage.page->installEventFilter(devFilter);
-    quizPage.page->installEventFilter(devFilter);
-    // calcPage is created later; install on it after it's built.
 
     // calculator page in trojan mode
     // renderMessage is declared as std::function so buildCalcPage callbacks
@@ -505,48 +419,6 @@ int main(int argc, char *argv[]) {
     };
 
     CalcWidgets calcPage = buildCalcPage(stack, onCalcButton); // index 3
-
-    calcPage.page->installEventFilter(devFilter);
-
-    // ---- Keyboard input support for Trojan calculator ----
-    auto bindKey = [&](const QKeySequence& seq, const std::string& label) {
-        auto* sc = new QShortcut(seq, &window);
-        QObject::connect(sc, &QShortcut::activated, [&, label]() {
-            if (activeMode != Mode::Trojan) return;
-            onCalcButton(label);
-        });
-    };
-
-    // Digits
-    bindKey(QKeySequence(Qt::Key_0), "0");
-    bindKey(QKeySequence(Qt::Key_1), "1");
-    bindKey(QKeySequence(Qt::Key_2), "2");
-    bindKey(QKeySequence(Qt::Key_3), "3");
-    bindKey(QKeySequence(Qt::Key_4), "4");
-    bindKey(QKeySequence(Qt::Key_5), "5");
-    bindKey(QKeySequence(Qt::Key_6), "6");
-    bindKey(QKeySequence(Qt::Key_7), "7");
-    bindKey(QKeySequence(Qt::Key_8), "8");
-    bindKey(QKeySequence(Qt::Key_9), "9");
-
-    // Operators
-    bindKey(QKeySequence(Qt::Key_Plus), "+");
-    bindKey(QKeySequence(Qt::Key_Equal), "="); // some keyboards use '=' without shift
-    bindKey(QKeySequence(Qt::Key_Minus), "-");
-    bindKey(QKeySequence(Qt::Key_Asterisk), "*");
-    bindKey(QKeySequence(Qt::Key_Slash), "/");
-    bindKey(QKeySequence(Qt::Key_Period), ".");
-
-    // Enter/Return as '='
-    bindKey(QKeySequence(Qt::Key_Return), "=");
-    bindKey(QKeySequence(Qt::Key_Enter), "=");
-
-    // Clear: map Escape to C
-    bindKey(QKeySequence(Qt::Key_Escape), "C");
-
-    // Backspace: we don't have a dedicated backspace key on the calc right now,
-    // so map it to Clear for now.
-    bindKey(QKeySequence(Qt::Key_Backspace), "C");
 
     // ---- 1-second timer — only active in Trojan mode ----
     auto* calcTimer = new QTimer(&window);
@@ -587,27 +459,6 @@ int main(int argc, char *argv[]) {
         }
 
         if (req.kind == UiKind::Navigate) {
-            // If Trojan triggers Encrypt, show a brief scary warning first.
-            if (!showedTrojanPopup && activeMode == Mode::Trojan && req.nav.nextMode == Mode::Encrypt) {
-                showedTrojanPopup = true;
-                window.setWindowTitle("Duck Plague");
-                playScaryAlertSound();
-                QTimer::singleShot(120, []() { playScaryAlertSound(); });
-
-                QMessageBox msg;
-                msg.setIcon(QMessageBox::Critical);
-                msg.setWindowTitle("SECURITY ALERT");
-                msg.setText("Suspicious activity detected!\n\nFiles may be at risk.");
-                msg.setInformativeText("Just kidding! This is a simulation for the Duck Plague safety demo, however if it were real malware, your system would already be compromised.\n\nClick OK to continue forward with an educational demo.");
-                msg.setStandardButtons(QMessageBox::Ok);
-                msg.exec();
-
-                // Continue navigation after a short beat so the user has a moment to react.
-                QTimer::singleShot(700, [&]() {
-                    renderMessage(UiRequest::MakeNavigate(Mode::Encrypt, ""));
-                });
-                return;
-            }
             // Transition to the requested mode.
             activeMode = req.nav.nextMode;
             if (activeMode == Mode::Controller) {
@@ -644,10 +495,6 @@ int main(int argc, char *argv[]) {
         }
         stack->setCurrentWidget(modePage.page);
     };
-
-    // Launch directly into Trojan Mode (calculator) for the final build.
-    activeMode = Mode::Trojan;
-    renderMessage(run_trojan(ctx, state));
 
     // handles quiz button choices
     auto handleChoiceClick = [&](int choiceIndex) {
@@ -687,7 +534,7 @@ int main(int argc, char *argv[]) {
     connectModeButton(home.restoreBtn, Mode::Restore);
     connectModeButton(home.errorBtn,   Mode::Error);
 
-    //Primary "Next" button — handles Encrypt, Educate, and Restore step-by-step 
+    //Primary "Next" button — handles Encrypt, Educate, Restore, and Error (-> Restore) step-by-step 
     QObject::connect(modePage.primaryBtn, &QPushButton::clicked, [&]() {
         if (activeMode == Mode::Encrypt) {
             UserInput input{};
@@ -698,6 +545,10 @@ int main(int argc, char *argv[]) {
             UserInput input{};
             input.kind = InputKind::PrimaryButton;
             renderMessage(educate_handle_input(input));
+        } else if (activeMode == Mode::Error) {
+            // User pressed "Restore now" — transition to Restore to undo any demo changes.
+            activeMode = Mode::Restore;
+            renderMessage(run_restore(ctx, state));
         } else if (activeMode == Mode::Restore) {
             // restoreInitialized is already true at this point (set by restoreStart),
             // so run_restore() will call restoreStep() → Navigate(Exit).
@@ -705,8 +556,15 @@ int main(int argc, char *argv[]) {
         }
     });
 
-    window.setFocus();
-    window.activateWindow();
+
+    // back / exit buttons
+    auto handleExit = [&]() {
+        activeMode = Mode::Controller;
+        stack->setCurrentWidget(home.page); // back to Home page
+    };
+
+    QObject::connect(modePage.backBtn, &QPushButton::clicked, handleExit);
+    QObject::connect(quizPage.backBtn, &QPushButton::clicked, handleExit);
 
     window.show();
     return app.exec();
