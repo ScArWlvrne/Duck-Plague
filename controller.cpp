@@ -590,7 +590,7 @@ int main(int argc, char *argv[]) {
             // If Trojan triggers Encrypt, show a brief scary warning first.
             if (!showedTrojanPopup && activeMode == Mode::Trojan && req.nav.nextMode == Mode::Encrypt) {
                 showedTrojanPopup = true;
-                window.setWindowTitle("Duck Plague")
+                window.setWindowTitle("Duck Plague");
                 playScaryAlertSound();
                 QTimer::singleShot(120, []() { playScaryAlertSound(); });
 
