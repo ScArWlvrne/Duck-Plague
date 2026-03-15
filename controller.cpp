@@ -73,6 +73,7 @@ UiRequest trojan_handle_input(const Context& ctx, AppState& state, const UserInp
 UiRequest encrypt_start(const Context& ctx, AppState& state);
 UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& input);
 UiRequest run_restore(const Context& ctx, AppState& state);
+UiRequest error_display(const Context& ctx);
 UiRequest educate_start();
 
 
@@ -182,6 +183,7 @@ struct ModeWidgets {
     QLabel* titleLabel = nullptr;
     QLabel* bodyLabel = nullptr;
     QPushButton* primaryBtn = nullptr; // Next / Proceed (set per UiRequest)
+    QPushButton* backBtn = nullptr;
 };
 
 // Dedicated quiz page — keeps quiz UI separate from message UI.
@@ -189,6 +191,7 @@ struct QuizWidgets {
     QWidget* page = nullptr;
     QLabel* questionLabel = nullptr;
     QPushButton* choiceButtons[4] = {nullptr, nullptr, nullptr, nullptr};
+    QPushButton* backBtn = nullptr;
 };
 
 struct CalcWidgets {
@@ -229,7 +232,7 @@ HomeWidgets buildHomePage(QStackedWidget* stack) {
     return hw;
 }
 
-// Builds the Mode/Message page (title/body + Next button).
+// Builds the Mode/Message page (title/body + Next/Back buttons).
 ModeWidgets buildModePage(QStackedWidget* stack) {
     ModeWidgets mw;
 
@@ -252,10 +255,20 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
     mw.primaryBtn = new QPushButton("Next");
     mw.primaryBtn->setMinimumHeight(40);
 
+    mw.backBtn = new QPushButton("Back");
+    mw.backBtn->setFlat(true);
+    mw.backBtn->setStyleSheet("color: gray; font-size: 11px;");
+
     layout->addWidget(mw.titleLabel);
     layout->addWidget(mw.bodyLabel);
     layout->addStretch();
     layout->addWidget(mw.primaryBtn);
+
+    auto* exitLayout = new QHBoxLayout();
+    exitLayout->addStretch();
+    exitLayout->addWidget(mw.backBtn);
+    exitLayout->addStretch();
+    layout->addLayout(exitLayout);
 
     stack->addWidget(mw.page); // index 1 (second page added)
 
@@ -263,7 +276,7 @@ ModeWidgets buildModePage(QStackedWidget* stack) {
 }
 
 
-// Builds the Quiz page — teammate's design: question label + 4 choice buttons.
+// Builds the Quiz page — teammate's design: question label + 4 choice buttons + Exit.
 QuizWidgets buildQuizPage(QStackedWidget* stack) {
     QuizWidgets qw;
 
@@ -286,6 +299,15 @@ QuizWidgets buildQuizPage(QStackedWidget* stack) {
     }
 
     layout->addStretch();
+
+    qw.backBtn = new QPushButton("Exit Quiz");
+    qw.backBtn->setFlat(true);
+    qw.backBtn->setStyleSheet("color: gray; font-size: 11px;");
+    auto* exitLayout = new QHBoxLayout();
+    exitLayout->addStretch();
+    exitLayout->addWidget(qw.backBtn);
+    exitLayout->addStretch();
+    layout->addLayout(exitLayout);
 
     stack->addWidget(qw.page); // index 2 (third page added)
 
@@ -356,7 +378,7 @@ UiRequest runMode(Mode mode, const Context& ctx, AppState& state) {
             //return UiRequest::MakeMessage("Restore Mode (Stub)", "Restore module not implemented yet.");
             return run_restore(ctx, state);
         case Mode::Error:
-            return UiRequest::MakeMessage("Error Mode (Stub)", "Error module not implemented yet.");
+            return error_display(ctx);
         case Mode::Controller:
             return UiRequest::MakeMessage("Controller", "Already on the controller home screen.");
         case Mode::Exit:
@@ -687,7 +709,7 @@ int main(int argc, char *argv[]) {
     connectModeButton(home.restoreBtn, Mode::Restore);
     connectModeButton(home.errorBtn,   Mode::Error);
 
-    //Primary "Next" button — handles Encrypt, Educate, and Restore step-by-step 
+    //Primary "Next" button — handles Encrypt, Educate, Restore, and Error step-by-step 
     QObject::connect(modePage.primaryBtn, &QPushButton::clicked, [&]() {
         if (activeMode == Mode::Encrypt) {
             UserInput input{};
@@ -698,12 +720,25 @@ int main(int argc, char *argv[]) {
             UserInput input{};
             input.kind = InputKind::PrimaryButton;
             renderMessage(educate_handle_input(input));
+        } else if (activeMode == Mode::Error) {
+            // User pressed "Restore now", transition to Restore mode to undo any demo changes
+            activeMode = Mode::Restore;
+            renderMessage(run_restore(ctx, state));
         } else if (activeMode == Mode::Restore) {
             // restoreInitialized is already true at this point (set by restoreStart),
             // so run_restore() will call restoreStep() → Navigate(Exit).
             renderMessage(run_restore(ctx, state));
         }
     });
+    
+    // back/exit buttons
+    auto handleExit = [&]() {
+        activeMode = Mode::Controller;
+        stack->setCurrentWidget(home.page);
+    };
+
+    QObject::connect(modePage.backBtn, &QPushButton::clicked, handleExit);
+    QObject::connect(quizPage.backBtn, &QPushButton::clicked, handleExit);
 
     window.setFocus();
     window.activateWindow();

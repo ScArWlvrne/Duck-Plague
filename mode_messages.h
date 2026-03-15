@@ -109,3 +109,5 @@ struct AppState {
 
     TrojanCalcState calcState;
 };
+
+UiRequest error_set_and_log(const std::string& source, const std::string& message, const Context& ctx); // forward declaration so encrypt/educate can log errors with this utility

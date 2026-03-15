@@ -15,6 +15,7 @@ add_executable(DuckPlague
     encrypt.cpp
     educate.cpp
     restore.cpp
+    error.cpp
 )
 
 target_link_libraries(DuckPlague PRIVATE Qt6::Widgets)
