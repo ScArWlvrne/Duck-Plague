@@ -732,10 +732,10 @@ int main(int argc, char *argv[]) {
     });
     
     // back/exit buttons
-    aut handleExit = [&]() {
+    auto handleExit = [&]() {
         activeMode = Mode::Controller;
         stack->setCurrentWidget(home.page);
-    }
+    };
 
     QObject::connect(modePage.backBtn, &QPushButton::clicked, handleExit);
     QObject::connect(quizPage.backBtn, &QPushButton::clicked, handleExit);
