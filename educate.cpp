@@ -54,8 +54,7 @@ namespace {
             UiMessage{
                 "Duck Plague: Safety Course",
                 "This is an educational simulation. No real user data was permanently damaged.\n\n"
-                "In the demo, the program created COPIES of files and altered those copies to *look* 'encrypted'. "
-                "Original files were only made hidden (a reversible setting).",
+                "In the demo, the program created COPIES of files and altered those copies to *look* 'encrypted'. ",
                 "Next"
             },
             {}
