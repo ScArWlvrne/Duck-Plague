@@ -10,10 +10,11 @@
 
 namespace fs = std::filesystem;
 
-std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& state) {
+std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& state, std::string* outError) {
     // ADDED: Clear any state from a previous run so counts don't accumulate.
     state.targetFiles.clear();
     state.copyFiles.clear();
+    if (outError) *outError = {};
 
     std::vector<fs::directory_entry> targets;
     std::error_code ec;
@@ -23,8 +24,9 @@ std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& st
 
     auto iter = fs::directory_iterator(ctx.downloadsPath, ec);
     if (ec) {
-        log << "Failed to access downloads directory: " << ec.message() << std::endl;
-        log << "No target files will be processed." << std::endl;
+        std::string msg = "Failed to access downloads directory: " + ec.message() + ". No target files will be processed.";
+        log << msg << std::endl;
+        if (outError) *outError = msg;
         log << "-------------------------------" << std::endl;
         return {};
     }
@@ -86,7 +88,7 @@ std::vector<fs::directory_entry> getTargetFiles(const Context& ctx, AppState& st
     return targets;
 }
 
-void copyFiles(const Context& ctx, AppState& state) {
+std::string copyFiles(const Context& ctx, AppState& state) {
     std::ofstream log(ctx.logPath, std::ios::app);
     log << "------------------------------" << std::endl;
     log << "Copying files to: " << ctx.downloadsPath << " with suffix: " << ctx.demoSuffix << std::endl;
@@ -97,7 +99,12 @@ void copyFiles(const Context& ctx, AppState& state) {
         fs::copy_file(file, destination, fs::copy_options::overwrite_existing, copy_ec);
         
         if (copy_ec) {
-            std::cerr << "Failed to copy " << file << " to " << destination << ": " << copy_ec.message() << std::endl;
+            std::string msg = "Failed to copy " + file.string() + " to " + destination.string() + ": " + copy_ec.message();
+            log << msg << std::endl;
+            state.copyFiles.push_back(destination);
+            log << "Copied " << state.copyFiles.size() << " files (partial)." << std::endl;
+            log << "------------------------------" << std::endl;
+            return msg;
         }
 
         state.copyFiles.push_back(destination);
@@ -112,16 +119,12 @@ void copyFiles(const Context& ctx, AppState& state) {
     }
     log << "COPY_COUNT=" << n << std::endl;
     log << "------------------------------" << std::endl;
+
+    return {};
 }
 
-void hideFiles(const std::vector<fs::directory_entry>& files) {
-    // TODO: Implement file hiding logic (platform-specific)
-    // May be scrapped if deemed too complex or unreliable across platforms
-    // Not technically necessary since copies will be encrypted and original files can be left as is, but may be a nice touch if implemented correctly
-    // Copies will also appear above originals due to being newer
-}
 
-void xorFiles(const Context& ctx, AppState& state) { // Symmetric XOR encryption for demonstration purposes only, not secure for real use
+std::string xorFiles(const Context& ctx, AppState& state) { // Symmetric XOR encryption for demonstration purposes only, not secure for real use
     std::ofstream log(ctx.logPath, std::ios::app);
     log << "------------------------------" << std::endl;
     log << "Encrypting files with XOR stream cipher." << std::endl;
@@ -130,10 +133,23 @@ void xorFiles(const Context& ctx, AppState& state) { // Symmetric XOR encryption
         if (!fs::exists(filePath)) continue;
         log << "Encrypting file: " << filePath << std::endl;
 
-        uint64_t fileSize = static_cast<uint64_t>(fs::file_size(filePath));
+        std::error_code size_ec;
+        intmax_t sz = fs::file_size(filePath, size_ec);
+        if (size_ec) {
+            std::string msg = "Failed to get size of file: " + filePath.string() + ": " + size_ec.message();
+            log << msg << std::endl;
+            return msg;
+        }
+        uint64_t fileSize = static_cast<uint64_t>(sz);
         uint64_t streamState = state.encryptionKey ^ fileSize;
 
         std::fstream file(filePath, std::ios::in | std::ios::out | std::ios::binary);
+
+        if (!file) {
+            std::string msg = "Failed to open file for encryption: " + filePath.string();
+            log << msg << std::endl;
+            return msg;
+        }
 
         std::vector<char> buffer(4096);
         while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
@@ -153,6 +169,8 @@ void xorFiles(const Context& ctx, AppState& state) { // Symmetric XOR encryption
 
     log << "Encryption complete for " << state.copyFiles.size() << " files." << std::endl;
     log << "------------------------------" << std::endl;
+
+    return {};
 }
 
 UiRequest encrypt_start(const Context& ctx, AppState& state) {
@@ -185,7 +203,7 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
         return UiRequest::MakeMessage("Encrypt Mode", "Expected primary button input.");
     }
 
-    std::string body;
+    std::string body, scanErr, copyErr, xorErr;
     
     switch (state.encryptPhase) {
         case EncryptPhase::Warning:
@@ -194,7 +212,13 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
             log << "--------------------------------" << std::endl;
 
             state.encryptPhase = EncryptPhase::Scanning;
-            getTargetFiles(ctx, state);
+            scanErr.clear();
+            getTargetFiles(ctx, state, &scanErr);
+
+            if (!scanErr.empty()) {
+                return error_set_and_log("encrypt", scanErr, ctx);
+            }
+
             body =
                 "Found <b>" + std::to_string(state.targetFiles.size()) + "</b> files to process."
                 " Press Next to create demo copies.<br><br>"
@@ -220,7 +244,11 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
             log << "--------------------------------" << std::endl;
 
             state.encryptPhase = EncryptPhase::Copying;
-            copyFiles(ctx, state);
+            copyErr.clear();
+            copyErr = copyFiles(ctx, state);
+            if (!copyErr.empty()) {
+                return error_set_and_log("encrypt", copyErr, ctx);
+            }
             return UiRequest::MakeMessage(
                 "Copying Complete", 
                 "Created " + std::to_string(state.copyFiles.size()) + " demo copies. Press Next to encrypt the copies.", 
@@ -232,7 +260,11 @@ UiRequest encrypt_step(const Context& ctx, AppState& state, const UserInput& inp
             log << "--------------------------------" << std::endl;
 
             state.encryptPhase = EncryptPhase::Encrypting;
-            xorFiles(ctx, state);
+            xorErr.clear();
+            xorErr = xorFiles(ctx, state);
+            if (!xorErr.empty()) {
+                return error_set_and_log("encrypt", xorErr, ctx);
+            }
             return UiRequest::MakeMessage(
                 "Encryption Complete", 
                 "Demo files have been encrypted. Original files are unchanged. Press Next to finish.", 
