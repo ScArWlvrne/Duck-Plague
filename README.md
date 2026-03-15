@@ -13,17 +13,17 @@ Duck-Plague uses **CMake** and **Qt 6 (Widgets)**. The project is intended to ru
 - **CMake** 3.21 or newer
 - **Qt 6** with the **Widgets** component
 
-#### Windows (Target Platform)
+#### Windows
 - Windows 10/11
 - Qt 6 (Windows kit)
 - A C++ compiler supported by Qt (e.g., MSVC)
 
-#### macOS (Development / UI Testing Only)
+#### macOS
 - macOS (Apple Silicon or Intel)
 - Qt 6 (macOS kit)
 - Xcode Command Line Tools
 
-> ⚠️ **Safety note:** File-manipulation logic (e.g., Encrypt/Restore) should only be executed inside a VM until fully validated.
+> ⚠️ **Safety note:** File-manipulation logic (e.g., Encrypt/Restore) shouldn't cause issues with user data, but a Virutal Machine can be used to ensure 100% safety.
 
 ---
 
